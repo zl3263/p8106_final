@@ -30,8 +30,10 @@ library(rpart.plot)
 library(party)
 library(partykit)
 library(pROC)
-
+```
 # prepare the dataset
+
+```{r}
 load("data/recovery.RData")
 
 # sample from data
@@ -57,7 +59,7 @@ dat =
     vaccine=factor(vaccine),
     severity=factor(severity),
     study=factor(study),
-    recovery_bin = if_else(recovery_time <= 30, 0, 1), 
+    recovery_bin = if_else(recovery_time <= 30, 'f', 's'), 
     recovery_bin = factor(recovery_bin),
   ) %>%
   select(-id, -recovery_time)
@@ -68,8 +70,6 @@ sample = sample(c(TRUE, FALSE), nrow(dat), replace=TRUE, prob=c(0.8,0.2))
 data_train = dat[sample,]
 data_test = dat[!sample,]
 
-# for parameter tuning
-ctrl <- trainControl(method = "cv", number = 10)
 
 ```
 
@@ -79,35 +79,58 @@ ctrl <- trainControl(method = "cv", number = 10)
 ```{r}
 set.seed(1)
 tree1 <- rpart(formula = recovery_bin ~ . ,
-data = dat,
-subset = sample,
-control = rpart.control(cp = 0))
+               data = dat,
+               subset = sample,
+               control = rpart.control(cp = 0))
 cpTable <- printcp(tree1)
-
+cpTable
 plotcp(tree1)
 ```
 
 ```{r}
-tree2 <- ctree(formula = vaccine ~ . ,
-data = dat,
-subset = sample)
+tree2 <- ctree(formula = recovery_bin ~ . , 
+               data = dat,
+               subset = sample)
 plot(tree2)
 
 ```
 
 cart
 ```{r}
-ctrl <- trainControl(method = "cv",
-summaryFunction = twoClassSummary,
-classProbs = TRUE)
+ctrl <- trainControl(method = "cv", 
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
 set.seed(1)
-rpart.fit <- train(diabetes ~ . ,
-dat,
-subset = rowTrain,
-method = "rpart",
-tuneGrid = data.frame(cp = exp(seq(-6,-3, len = 50))),
-trControl = ctrl,
-metric = "ROC")
+rpart.fit <- train(recovery_bin ~ . ,
+                   data = dat,
+                   subset = sample,
+                   method = "rpart",
+                   tuneGrid = data.frame(cp = exp(seq(-10,-3, len = 50))),
+                   trControl = ctrl,
+                   metric = "ROC")
 ggplot(rpart.fit, highlight = TRUE)
 
 ```
+
+```{r}
+rpart.plot(rpart.fit$finalModel)
+
+```
+
+## cit
+```{r}
+set.seed(1)
+ctree.fit <- train(recovery_bin ~ . , 
+                   dat,
+                   subset = sample,
+                   method = "ctree",
+                   tuneGrid = data.frame(mincriterion = 1-exp(seq(-2, -1, length = 50))),
+                   metric = "ROC",
+                   trControl = ctrl)
+ggplot(ctree.fit, highlight = TRUE)
+plot(ctree.fit$finalModel)
+summary(resamples(list(rpart.fit, ctree.fit)))
+```
+
+
+
