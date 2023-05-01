@@ -1,0 +1,113 @@
+---
+title: "p8106_final"
+author: "Zekai Jin, Zizhao Lin, Jiawen Zhao"
+date: "2023-4-30"
+output: html_document
+---
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(
+  message  = FALSE,
+  warning = FALSE
+)
+```
+
+
+```{r}
+# Load the packages
+library(tidyverse)
+library(forcats)
+library(ggridges)
+library(corrplot)
+library(patchwork)
+library(caret)
+library(ISLR)
+library(mlbench)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(party)
+library(partykit)
+library(pROC)
+
+# prepare the dataset
+load("data/recovery.RData")
+
+# sample from data
+set.seed(2357) 
+sample_1=sample(1:10000, 2000)
+set.seed(3263) 
+sample_2=sample(1:10000, 2000)
+
+sample = c(sample_1,sample_2) %>% unique()
+
+set.seed(1)
+
+# preprocessing
+dat = 
+  dat[sample,] %>%
+  janitor::clean_names() %>%
+  mutate(
+    gender=fct_recode(factor(gender),male='1',female='0'),
+    race=fct_recode(factor(race),white='1',asian='2',black='3',hispanic='4'),
+    smoking=fct_recode(factor(smoking),never='0',former='1',current='2'),
+    hypertension=factor(hypertension),
+    diabetes=factor(diabetes),
+    vaccine=factor(vaccine),
+    severity=factor(severity),
+    study=factor(study),
+    recovery_bin = if_else(recovery_time <= 30, 0, 1), 
+    recovery_bin = factor(recovery_bin),
+  ) %>%
+  select(-id, -recovery_time)
+
+
+# train-test splitting
+sample = sample(c(TRUE, FALSE), nrow(dat), replace=TRUE, prob=c(0.8,0.2))
+data_train = dat[sample,]
+data_test = dat[!sample,]
+
+# for parameter tuning
+ctrl <- trainControl(method = "cv", number = 10)
+
+```
+
+
+# rpart
+
+```{r}
+set.seed(1)
+tree1 <- rpart(formula = recovery_bin ~ . ,
+data = dat,
+subset = sample,
+control = rpart.control(cp = 0))
+cpTable <- printcp(tree1)
+
+plotcp(tree1)
+```
+
+```{r}
+tree2 <- ctree(formula = vaccine ~ . ,
+data = dat,
+subset = sample)
+plot(tree2)
+
+```
+
+cart
+```{r}
+ctrl <- trainControl(method = "cv",
+summaryFunction = twoClassSummary,
+classProbs = TRUE)
+set.seed(1)
+rpart.fit <- train(diabetes ~ . ,
+dat,
+subset = rowTrain,
+method = "rpart",
+tuneGrid = data.frame(cp = exp(seq(-6,-3, len = 50))),
+trControl = ctrl,
+metric = "ROC")
+ggplot(rpart.fit, highlight = TRUE)
+
+```

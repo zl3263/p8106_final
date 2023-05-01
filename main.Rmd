@@ -49,9 +49,10 @@ dat =
     vaccine=factor(vaccine),
     severity=factor(severity),
     study=factor(study),
-    recovery_bin = if_else(recovery_time <= 30, 0, 1), 
+    recovery_bin = if_else(recovery_time <= 30, 0, 1),
+    recovery_bin = factor(recovery_bin),
   ) %>%
-  select(-id)
+  select(-id, -recovery_time)
 
 
 # train-test splitting
