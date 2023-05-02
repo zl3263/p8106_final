@@ -74,7 +74,7 @@ data_test = dat[!sample,]
 ```
 
 
-# rpart
+## rpart
 
 ```{r}
 set.seed(1)
@@ -83,19 +83,28 @@ tree1 <- rpart(formula = recovery_bin ~ . ,
                subset = sample,
                control = rpart.control(cp = 0))
 cpTable <- printcp(tree1)
-cpTable
+
 plotcp(tree1)
+minErr <- which.min(cpTable[,4])
+tree2 <- prune(tree1, cp = cpTable[minErr,1])
+rpart.plot(tree2)
 ```
+
+From the plot, we see that the tree with size of 7 has the lowest cross-validation error. The variables used for splits are study Group B, bmi<30, vaccine, severity, smoking and bmi>=23.
+
+## ctree
 
 ```{r}
 tree2 <- ctree(formula = recovery_bin ~ . , 
                data = dat,
                subset = sample)
-plot(tree2)
 
+plot(tree2)
 ```
 
-cart
+
+## cart
+
 ```{r}
 ctrl <- trainControl(method = "cv", 
                      summaryFunction = twoClassSummary,
@@ -129,6 +138,11 @@ ctree.fit <- train(recovery_bin ~ . ,
                    trControl = ctrl)
 ggplot(ctree.fit, highlight = TRUE)
 plot(ctree.fit$finalModel)
+```
+
+
+## compare two trees
+```{r}
 summary(resamples(list(rpart.fit, ctree.fit)))
 ```
 
