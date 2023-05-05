@@ -22,6 +22,9 @@ library(ggridges)
 library(corrplot)
 library(patchwork)
 library(caret)
+library(klaR)
+library(kernlab)
+library(factoextra)
 
 # prepare the dataset
 load("data/recovery.RData")
@@ -49,10 +52,10 @@ dat =
     vaccine=factor(vaccine),
     severity=factor(severity),
     study=factor(study),
-    recovery_bin = if_else(recovery_time <= 30, 0, 1),
+    recovery_bin = if_else(recovery_time <= 30, 'f', 's'), 
     recovery_bin = factor(recovery_bin),
-  ) %>%
-  select(-id, -recovery_time)
+  )%>%
+  dplyr::select(-id, -recovery_time)
 
 
 # train-test splitting
@@ -61,110 +64,127 @@ data_train = dat[sample,]
 data_test = dat[!sample,]
 
 # for parameter tuning
-ctrl <- trainControl(method = "cv", number = 10)
+ctrl <- trainControl(method = "cv", number = 5)
 
 ```
 
+## PCA
 
-# exploratory analysis
+According to PCA, the two classes are non-separable. 
+
+<!-- 分类结果都好烂，用pca看看好不好分 -->
+<!-- 寄-->
+```{r}
+pca = prcomp(data.matrix(data_train))
+
+fviz_eig(pca, addlabels = TRUE)
+
+fviz_pca_ind(pca,
+             habillage = data_train$recovery_bin,
+             label = "none",
+             addEllipses = TRUE)
+```
+
+
+
+## Classification
+
+## GLM 
+
+General liner model is tested  with logit link for binary outcome. It has no tuning parameter available and the accuracy is 0.71 in cross validation.
 
 ```{r}
-# for continuous data
-featurePlot(
-  x = data_train %>% select(age,height,weight,bmi,sbp,ldl),
-  y = data_train$recovery_time,
-  plot = "scatter",
-  span = .5,
-  labels = c("Predictors","recovery_time"),
-  type = c("p", "smooth"),
-  layout = c(3, 2)
-)
+
+#ctrl = trainControl(method = "cv", 
+#                     summaryFunction = twoClassSummary,
+#                     classProbs = TRUE)
+
+glm_fit = train(recovery_bin ~ . , 
+                data_train,
+                method = "glm",
+                family = binomial(link = "logit"))
+
+
+summary(glm_fit)
+
+glm_pred_raw = predict(glm_fit, newdata = data_test, type = "raw")
+
+confusionMatrix(data = glm_pred_raw, reference = data_test$recovery_bin)
 ```
+
+## LDA 
+
+Discriminate Analysis assign a sample to the group which it presents higher probability under given predictor. According to the plot, little difference is shown in two group, thus it fail to classify the data.  
+
+<!-- qda表现也很烂就不赘述了 -->
 
 ```{r}
-# for catagorical data
-p1 =
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=gender,color=gender,fill=gender),alpha=0.5) +
-    xlim(0,100)
-p2 =
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=race,color=race,fill=race),alpha=0.5)+
-    xlim(0,100)
-p3 =
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=smoking,color=smoking,fill=smoking),alpha=0.5)+
-    xlim(0,100)
-p4 =
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=hypertension,color=hypertension,fill=hypertension),alpha=0.5)+
-    xlim(0,100)
-p5 =
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=diabetes,color=diabetes,fill=diabetes),alpha=0.5)+
-    xlim(0,100)
-p6 =
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=vaccine,color=vaccine,fill=vaccine),alpha=0.5)+
-    xlim(0,100)
-p7 =
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=severity,color=severity,fill=severity),alpha=0.5)+
-    xlim(0,100)
-p8=
-  data_train %>%
-    ggplot() +
-    geom_density_ridges(aes(x=recovery_time,y=study,color=study,fill=study),alpha=0.5)+
-    xlim(0,100)
-(p1+p2+p3+p4)/(p5+p6+p7+p8)
-```
 
-```{r}
-# correlation of continuous predictors
-data_train %>%
-  select(recovery_time,height,weight,bmi,sbp,ldl) %>%
-  #model.matrix(recovery_time~.,.) %>%
-  cor() %>%
-  corrplot(.,type = "lower")
-```
+ctrl = trainControl(method = "cv", number = 5, classProbs = TRUE)
+
+lda_fit0 = lda(recovery_bin~., data = data_train)
+plot(lda_fit0)
+
+# Accordingt to plot, LDA failed to separate the two classes. 
+
+# refit using caret for model comparation
 
 
-# building models
-```{r,cache=TRUE}
-# linear model
-set.seed(1)
-m_lm = 
-  train(
-    recovery_time~.,
-    data = data_train,
-    method = "lm",
-    trControl = ctrl
-  )
-par(mfrow = c(2,2))
-plot(m_lm$finalModel)
-
-# elastic net for predictor selection
-tune_grid = 
-  expand.grid(
-    alpha = 0:5/5,
-    lambda = exp(-100:0/20)
-  )
 
 set.seed(1)
-m_enet = 
-  train(
-    recovery_time~.,
-    data = data_train,
-    method = "glmnet",
-    tuneGrid = tune_grid,
-    trControl = ctrl
-  )
-plot(m_enet)
+lda_fit = train(x = data.matrix(data_train[1:14]),
+                y = data_train$recovery_bin,
+                method = "lda",
+                metric = "ROC",
+                trControl = ctrl)
+
+lda_pred_raw = predict(lda_fit, newdata = data.matrix(data_test), type = "raw")
+confusionMatrix(data = lda_pred_raw, reference = data_test$recovery_bin)
+
+```
+
+
+## SVM -- sth wrong?
+
+Support Vector Machine separates data at hyper plane.
+
+
+<!-- 跑不动， 全寄，看泽楷的图说话.jpg
+```{r message=FALSE}
+ctrl = trainControl(method = "cv", classProbs = TRUE)
+set.seed(1)
+svml_fit = train(recovery_bin~.,
+                 data_train,
+                 method = "svmLinear",
+                 tuneGrid = data.frame(C = exp(seq(-2,3,len=30))),
+                 preProcess = c("center","scale"),
+                 trControl = ctrl)
+
+plot(svml_fit, highlight = TRUE, xTrans = log)
+```
+
+```{r}
+
+ctrl = trainControl(method = "cv", classProbs = TRUE)
+svmr.grid = expand.grid(C = exp(seq(-1,5,len=10)),
+                        sigma = exp(seq(-10,-2,len=10)))
+set.seed(1)
+svmr.fit = train(x = data.matrix(data_train[1:14]),
+                 y = data_train$recovery_bin,
+                 method = "svmRadialSigma",
+                 tuneGrid = svmr.grid,
+                 trControl = ctrl)
+
+myCol= rainbow(25)
+
+myPar = list(superpose.symbol = list(col = myCol),superpose.line = list(col = myCol))
+
+plot(svmr.fit, highlight = TRUE, par.settings = myPar)
+
+```
+
+-->
+
+```{r}
+
 ```
