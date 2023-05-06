@@ -74,33 +74,33 @@ data_test = dat[!sample,]
 ```
 
 
-## rpart
+<!-- ## rpart -->
 
-```{r}
-set.seed(1)
-tree1 <- rpart(formula = recovery_bin ~ . ,
-               data = dat,
-               subset = sample,
-               control = rpart.control(cp = 0))
-cpTable <- printcp(tree1)
+<!-- ```{r} -->
+<!-- set.seed(1) -->
+<!-- tree1 <- rpart(formula = recovery_bin ~ . , -->
+<!--                data = dat, -->
+<!--                subset = sample, -->
+<!--                control = rpart.control(cp = 0)) -->
+<!-- cpTable <- printcp(tree1) -->
 
-plotcp(tree1)
-minErr <- which.min(cpTable[,4])
-tree2 <- prune(tree1, cp = cpTable[minErr,1])
-rpart.plot(tree2)
-```
+<!-- plotcp(tree1) -->
+<!-- minErr <- which.min(cpTable[,4]) -->
+<!-- tree2 <- prune(tree1, cp = cpTable[minErr,1]) -->
+<!-- rpart.plot(tree2) -->
+<!-- ``` -->
 
-From the plot, we see that the tree with size of 7 has the lowest cross-validation error. The variables used for splits are study Group B, bmi<30, vaccine, severity, smoking and bmi>=23.
+<!-- From the plot, we see that the tree with size of 7 has the lowest cross-validation error. The variables used for splits are study Group B, bmi<30, vaccine, severity, smoking and bmi>=23. -->
 
-## ctree
+<!-- ## ctree -->
 
-```{r}
-tree2 <- ctree(formula = recovery_bin ~ . , 
-               data = dat,
-               subset = sample)
+<!-- ```{r} -->
+<!-- tree2 <- ctree(formula = recovery_bin ~ . ,  -->
+<!--                data = dat, -->
+<!--                subset = sample) -->
 
-plot(tree2)
-```
+<!-- plot(tree2) -->
+<!-- ``` -->
 
 
 ## cart
@@ -114,7 +114,7 @@ rpart.fit <- train(recovery_bin ~ . ,
                    data = dat,
                    subset = sample,
                    method = "rpart",
-                   tuneGrid = data.frame(cp = exp(seq(-10,-3, len = 50))),
+                   tuneGrid = data.frame(cp = exp(seq(-10,-2, len = 50))),
                    trControl = ctrl,
                    metric = "ROC")
 ggplot(rpart.fit, highlight = TRUE)
@@ -125,6 +125,8 @@ ggplot(rpart.fit, highlight = TRUE)
 rpart.plot(rpart.fit$finalModel)
 
 ```
+
+From the plot, we see that the tree with size of 11 has the highest ROC.
 
 ## cit
 ```{r}
@@ -146,5 +148,43 @@ plot(ctree.fit$finalModel)
 summary(resamples(list(rpart.fit, ctree.fit)))
 ```
 
+## bagging
+```{r}
+set.seed(1)
+bagging <- randomForest(recovery_bin ~ . ,
+                        data_train,
+                        mtry = 8)
+set.seed(1)
+rf <- randomForest(recovery_bin ~ . ,
+                   data_train,
+                   mtry = 3)
 
+set.seed(1)
+rf2 <- ranger(recovery_bin ~ . ,
+              data_train,
+              mtry = 3,
+              probability = TRUE)
 
+rf.pred <- predict(rf, newdata = data_test, type = "prob")[,1]
+rf2.pred <- predict(rf2, data = data_test, type = "response")$predictions[,1]
+
+```
+
+## Boosting
+
+```{r}
+### Boosting
+dat2 <- dat
+dat2$recovery_bin <- as.numeric(dat$recovery_bin == "f")
+set.seed(1)
+bst <- gbm(recovery_bin ~ . ,
+           dat2[sample,],
+           distribution = "adaboost",
+           n.trees = 2000,
+           interaction.depth = 2,
+           shrinkage = 0.005,
+           cv.folds = 10,
+           n.cores = 2)
+gbm.perf(bst, method = "cv")
+
+```
