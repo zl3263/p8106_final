@@ -146,7 +146,7 @@ confusionMatrix(data = lda_pred_raw, reference = data_test$recovery_bin)
 
 ## SVM -- sth wrong?
 
-Support Vector Machine separates data at hyper plane.
+Support Vector Machine separates data at hyper plane. Linear SVM presents little difference on cost ranging from -2 to 3. SVM with radial sigma is optimized when cost is around 20 and sigma is around -8.3, which reaches an accuracy of 0.71. The SVM has similar result comparing to GLM, which is reasonable since the data is non-seperatable. 
 
 
 <!-- 跑不动， 全寄，看泽楷的图说话.jpg
