@@ -1,0 +1,356 @@
+---
+title: "p8106_final_regression"
+author: "Zekai Jin, Zizhao Lin, Jiawen Zhao"
+date: "2023-5-8"
+output: html_document
+---
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(
+  message  = FALSE,
+  warning = FALSE
+)
+```
+
+# initialization
+```{r}
+# Load the packages
+library(tidyverse)
+library(forcats)
+library(ggridges)
+library(corrplot)
+library(patchwork)
+library(caret)
+library(vip)
+library(doParallel)
+
+# prepare the dataset
+load("data/recovery.RData")
+
+# sample from data
+set.seed(2357) 
+sample_1=sample(1:10000, 2000)
+set.seed(3263) 
+sample_2=sample(1:10000, 2000)
+
+sample = c(sample_1,sample_2) %>% unique()
+
+set.seed(1)
+
+# preprocessing
+dat = 
+  dat[sample,] %>%
+  janitor::clean_names() %>%
+  mutate(
+    gender=fct_recode(factor(gender),male='1',female='0'),
+    race=fct_recode(factor(race),white='1',asian='2',black='3',hispanic='4'),
+    smoking=fct_recode(factor(smoking),never='0',former='1',current='2'),
+    hypertension=factor(hypertension),
+    diabetes=factor(diabetes),
+    vaccine=factor(vaccine),
+    severity=factor(severity),
+    study=factor(study),
+  ) %>%
+  select(-id)
+
+
+# train-test splitting
+sample = sample(c(TRUE, FALSE), nrow(dat), replace=TRUE, prob=c(0.8,0.2))
+data_train = dat[sample,]
+data_test = dat[!sample,]
+
+# for parameter tuning
+ctrl <- trainControl(method = "cv", number = 10)
+
+```
+
+
+# exploratory analysis
+
+```{r}
+# for continuous data
+featurePlot(
+  x = data_train %>% select(age,height,weight,bmi,sbp,ldl),
+  y = data_train$recovery_time,
+  plot = "scatter",
+  span = .5,
+  labels = c("Predictors","recovery_time"),
+  type = c("p", "smooth"),
+  layout = c(3, 2)
+)
+```
+
+```{r}
+# for catagorical data
+p1 =
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=gender,color=gender,fill=gender),alpha=0.5) +
+    xlim(0,100)
+p2 =
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=race,color=race,fill=race),alpha=0.5)+
+    xlim(0,100)
+p3 =
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=smoking,color=smoking,fill=smoking),alpha=0.5)+
+    xlim(0,100)
+p4 =
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=hypertension,color=hypertension,fill=hypertension),alpha=0.5)+
+    xlim(0,100)
+p5 =
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=diabetes,color=diabetes,fill=diabetes),alpha=0.5)+
+    xlim(0,100)
+p6 =
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=vaccine,color=vaccine,fill=vaccine),alpha=0.5)+
+    xlim(0,100)
+p7 =
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=severity,color=severity,fill=severity),alpha=0.5)+
+    xlim(0,100)
+p8=
+  data_train %>%
+    ggplot() +
+    geom_density_ridges(aes(x=recovery_time,y=study,color=study,fill=study),alpha=0.5)+
+    xlim(0,100)
+(p1+p2+p3+p4)/(p5+p6+p7+p8)
+```
+
+```{r}
+# correlation of continuous predictors
+data_train %>%
+  select(recovery_time,height,weight,bmi,sbp,ldl) %>%
+  #model.matrix(recovery_time~.,.) %>%
+  cor() %>%
+  corrplot(.,type = "lower")
+```
+
+
+# regression
+## midterm models
+```{r}
+set.seed(1)
+m_lm = 
+  train(
+    recovery_time~.,
+    data = data_train,
+    method = "lm",
+    trControl = ctrl
+  )
+par(mfrow = c(2,2))
+plot(m_lm$finalModel)
+
+# elastic net for predictor selection
+tune_grid = 
+  expand.grid(
+    alpha = 0:5/5,
+    lambda = exp(-100:0/20)
+  )
+set.seed(1)
+m_enet = 
+  train(
+    recovery_time~.,
+    data = data_train,
+    method = "glmnet",
+    tuneGrid = tune_grid,
+    trControl = ctrl
+  )
+plot(m_enet)
+
+# genrealized linear model with gamma distribution
+set.seed(1)
+m_glm = 
+  train(
+    recovery_time~.,
+    data = data_train,
+    method = "glm",
+    family=Gamma(link="log"),
+    trControl = ctrl
+  )
+
+
+# partial least squares
+tune_grid = 
+  expand.grid(
+    ncomp = 1:14
+  )
+set.seed(1)
+m_pls = 
+  train(
+    recovery_time~.,
+    data = data_train,
+    method = "pls",
+    tuneGrid = tune_grid,
+    trControl = ctrl,
+    preprocess = c("center","scale")
+  )
+plot(m_pls)
+
+# GAM
+set.seed(1)
+m_gam = 
+  train(
+    recovery_time~.,
+    data = data_train,
+    method = "gam",
+    trControl = ctrl,
+  )
+plot(m_gam)
+
+# MARS
+tune_grid = 
+  expand.grid(
+    degree = 1:4,
+    nprune = 1:20
+  )
+set.seed(1)
+m_mars = 
+  train(
+    recovery_time~.,
+    data = data_train,
+    method = "earth",
+    tuneGrid = tune_grid,
+    trControl = ctrl,
+  )
+plot(m_mars)
+```
+explanation of these models can be found in "P8106 Midterm Project.pdf"
+
+## regression tree based model
+```{r}
+# a single tree
+tune_grid = data.frame(
+  cp = 0:100/5000
+)
+set.seed(1)
+model_rpart = train(
+  recovery_time~.,
+  data=data_train,
+  method = "rpart",
+  trControl = ctrl,
+  tuneGrid=tune_grid
+)
+
+ggplot(model_rpart,highlight=TRUE)
+```
+
+
+```{r}
+# boosting on regression tree
+tune_grid <- expand.grid(
+  n.trees = c(400,600,800,1000,1200,1400,2000),
+  interaction.depth = 3:9,
+  shrinkage = c(0.005,0.01,0.015),
+  n.minobsinnode = c(1)
+)
+
+# parallel computation
+cl <- makePSOCKcluster(8)
+registerDoParallel(cl)
+
+set.seed(1)
+model_gbm = train(
+  recovery_time~.,
+  data=data_train,
+  method = "gbm",
+  trControl = ctrl,
+  tuneGrid=tune_grid,
+  verbose=FALSE
+)
+
+stopCluster(cl)
+
+ggplot(model_gbm,highlight=TRUE)
+```
+
+```{r}
+# rforest
+tune_grid = expand.grid(
+  mtry=1:16,
+  splitrule="variance",
+  min.node.size=1:5
+)
+
+# parallel computation
+cl <- makePSOCKcluster(8)
+registerDoParallel(cl)
+
+set.seed(1)
+model_rforest = train(
+  recovery_time~.,
+  data=data_train,
+  method = "ranger",
+  trControl = ctrl,
+  tuneGrid=tune_grid
+)
+
+stopCluster(cl)
+
+ggplot(model_rforest,highlight=TRUE)
+```
+
+# comparing different models:
+```{r}
+comparasion = resamples(list(
+  lm=m_lm,
+  enet=m_enet,
+  glm=m_glm,
+  pls=m_pls,
+  gam=m_gam,
+  mars=m_mars,
+  regtree=model_rpart,
+  gbm=model_gbm,
+  rforest=model_rforest
+  ))
+
+model_rank =
+  comparasion$values %>%
+  select(ends_with("RMSE")) %>%
+  pivot_longer('lm~RMSE':'rforest~RMSE',names_to = "model", values_to = "RMSE",names_pattern = "(.*)~RMSE") %>%
+  group_by(model) %>%
+  summarize(RMSE_mean=mean(RMSE),RMSE_sd = sd(RMSE)) %>%
+  arrange(RMSE_mean) 
+model_rank
+
+model_rank=pull(model_rank,model)
+
+comparasion$values %>%
+  select(ends_with("RMSE")) %>%
+  pivot_longer('lm~RMSE':'rforest~RMSE',names_to = "model", values_to = "RMSE",names_pattern = "(.*)~RMSE") %>%
+  mutate(model=factor(model,levels=model_rank)) %>%
+  ggplot() +
+  geom_density_ridges(aes(x=RMSE,y=model,color=model,fill=model),alpha=0.5)
+```
+
+# final model evaluation
+```{r}
+# test error
+predicted = predict(model_gbm,newdata=data_test)
+sqrt(mean((data_test$recovery_time-predicted)^2))
+
+
+# vip
+vip(
+  model_gbm,
+  method = "permute",
+  train = data_train,
+  target = "recovery_time",
+  metric = "RMSE",
+  nsim = 10,
+  pred_wrapper = predict,
+  geom = "boxplot",
+  all_permutations = TRUE,
+  mapping = aes_string(fill = "Variable")
+)
+
+```
