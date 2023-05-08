@@ -31,11 +31,13 @@ library(party)
 library(partykit)
 library(pROC)
 library(randomForest)
+library(ranger)
+library(gbm)
 ```
 
 ### Intro
 
-# For this project, we are using a public dataset combining 3 cohort studies regarding COVID-19 recovery information, to gain a better understanding of the factors that predict recovery time from COVID-19 illness. This dataset includes 15 variables, they are age, gender, race, smoking, height, weight, BMI, hypertension, diabetes, sbp, ldl, vaccine, severity, study, and recovery time, where the recovery time is the dependent variable that we want to predict, and the rest 14 variables are predictors that help us to build models predicting the recovery time. Among those predictors, there are 8 categorical variables, and 6 continuous variables. 
+# For this project, we are using a public dataset combining 3 cohort studies regarding COVID-19 recovery information, to gain a better understanding of the factors that predict recovery time from COVID-19 illness. This dataset includes 15 variables, they are age, gender, race, smoking, height, weight, BMI, hypertension, diabetes, sbp, ldl, vaccine, severity, study, and recovery time, where the recovery time is the dependent variable that we want to predict, and the rest 14 variables are predictors that help us to build models predicting the recovery time. Here, we set recovery time as a binary variable taking values of 'f' and 's', where 'f' represents recovering within with equal 30 days and 's' represtns recoverying longer than 30 days. Among those predictors, there are 8 categorical variables, and 6 continuous variables. In the following sections, we are going to build models, including glm, classification tree, regression tree, svm, to best predict our binary response variable, recovery time.
 
 
 # prepare the dataset
@@ -102,65 +104,13 @@ data_test = dat[!sample,]
 <!-- ## ctree -->
 
 <!-- ```{r} -->
-<!-- tree2 <- ctree(formula = recovery_bin ~ . ,  -->
+<!-- tree2 <- ctree(formula = recovery_bin ~ . , -->
 <!--                data = dat, -->
 <!--                subset = sample) -->
 
 <!-- plot(tree2) -->
 <!-- ``` -->
 
-
-## cart
-
-```{r}
-ctrl <- trainControl(method = "cv", 
-                     summaryFunction = twoClassSummary,
-                     classProbs = TRUE)
-set.seed(1)
-rpart.fit <- train(recovery_bin ~ . ,
-                   data = dat,
-                   subset = sample,
-                   method = "rpart",
-                   tuneGrid = data.frame(cp = exp(seq(-10,-2, len = 50))),
-                   trControl = ctrl,
-                   metric = "ROC")
-ggplot(rpart.fit, highlight = TRUE)
-
-rpart.fit$bestTune
-
-```
-
-The optimal value of cp is 0.00843378, which is the value of the complexity parameter that results in the best performance of the model. Here, the cp controls the complexity of the tree, with smaller values of cp resulting in larger trees and larger values of cp resulting in smaller trees with fewer splits.
-
-```{r}
-rpart.plot(rpart.fit$finalModel)
-
-```
-
-From the plot, we see that the tree with size of 7 has the highest ROC.
-
-## cit
-```{r}
-set.seed(1)
-ctree.fit <- train(recovery_bin ~ . , 
-                   dat,
-                   subset = sample,
-                   method = "ctree",
-                   tuneGrid = data.frame(mincriterion = 1-exp(seq(-2, -1, length = 50))),
-                   metric = "ROC",
-                   trControl = ctrl)
-ggplot(ctree.fit, highlight = TRUE)
-plot(ctree.fit$finalModel)
-
-ctree.fit$bestTune
-```
-
-
-
-## compare two trees
-```{r}
-summary(resamples(list(rpart.fit, ctree.fit)))
-```
 
 ## bagging
 ```{r}
@@ -176,20 +126,20 @@ The OOB estimate of the error rate is 30.83%, which is an estimate of the classi
 The class.error is the classification error rate, which is the proportion of misclassified cases. The error rate for classifying "f" is 0.6746850 and for "s" it is 0.1460446.
 In summary, the model has a moderate OOB error rate of 30.83%, with more errors in classifying "f" than "s".
 
-```{r}
-set.seed(1)
-rf <- randomForest(recovery_bin ~ . ,
-                   data_train)
-
-set.seed(1)
-rf2 <- ranger(recovery_bin ~ . ,
-              data_train,
-              probability = TRUE)
-
-rf.pred <- predict(rf, newdata = data_test, type = "prob")[,1]
-rf2.pred <- predict(rf2, data = data_test, type = "response")$predictions[,1]
-
-```
+# ```{r}
+# set.seed(1)
+# rf <- randomForest(recovery_bin ~ . ,
+#                    data_train)
+# 
+# set.seed(1)
+# rf2 <- ranger(recovery_bin ~ . ,
+#               data_train,
+#               probability = TRUE)
+# 
+# rf.pred <- predict(rf, newdata = data_test, type = "prob")[,1]
+# rf2.pred <- predict(rf2, data = data_test, type = "response")$predictions[,1]
+# 
+# ```
 
 
 
@@ -212,3 +162,60 @@ bst <- gbm(recovery_bin ~ . ,
 gbm.perf(bst, method = "cv")
 
 ```
+
+The plot shows the cross-validation performance of the GBM (Gradient Boosting Machine) model on the training data. The x-axis represents the number of boosting iterations, and the y-axis represents the model's performance metric. The plot shows the performance on the training data (black line) and the performance on the test data (green line) for each boosting iteration, and the blue dashed line shows what is the optimal number of iterations = 1866.
+
+
+
+
+
+## cart
+
+```{r}
+ctrl <- trainControl(method = "cv", 
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+set.seed(1)
+rpart.fit <- train(recovery_bin ~ . ,
+                   data = dat,
+                   subset = sample,
+                   method = "rpart",
+                   tuneGrid = data.frame(cp = exp(seq(-10,-2, len = 50))),
+                   trControl = ctrl,
+                   metric = "ROC")
+ggplot(rpart.fit, highlight = TRUE)
+
+rpart.fit$bestTune
+rpart.plot(rpart.fit$finalModel)
+```
+
+The optimal value of cp is 0.00843378, which is the value of the complexity parameter that results in the best performance of the model. Here, the cp controls the complexity of the tree, with smaller values of cp resulting in larger trees and larger values of cp resulting in smaller trees with fewer splits.
+
+From the plot, we see that the tree with size of 7 has the highest ROC.
+
+## cit
+```{r}
+set.seed(1)
+ctree.fit <- train(recovery_bin ~ . , 
+                   dat,
+                   subset = sample,
+                   method = "ctree",
+                   tuneGrid = data.frame(mincriterion = 1-exp(seq(-5, -1, length = 50))),
+                   metric = "ROC",
+                   trControl = ctrl)
+ggplot(ctree.fit, highlight = TRUE)
+plot(ctree.fit$finalModel)
+
+ctree.fit$bestTune
+```
+
+The optimal value of cp is 0.7922518, which is the value of the complexity parameter that results in the best performance of the model, and this model has ROC of 0.693.
+
+
+## compare two trees
+```{r}
+summary(resamples(list(rpart.fit, ctree.fit)))
+```
+
+Since ctree.fit model has larger ROC, it's a better classification tree compared to the rpart.fit. 
+
