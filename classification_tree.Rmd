@@ -30,7 +30,14 @@ library(rpart.plot)
 library(party)
 library(partykit)
 library(pROC)
+library(randomForest)
 ```
+
+### Intro
+
+# For this project, we are using a public dataset combining 3 cohort studies regarding COVID-19 recovery information, to gain a better understanding of the factors that predict recovery time from COVID-19 illness. This dataset includes 15 variables, they are age, gender, race, smoking, height, weight, BMI, hypertension, diabetes, sbp, ldl, vaccine, severity, study, and recovery time, where the recovery time is the dependent variable that we want to predict, and the rest 14 variables are predictors that help us to build models predicting the recovery time. Among those predictors, there are 8 categorical variables, and 6 continuous variables. 
+
+
 # prepare the dataset
 
 ```{r}
@@ -119,14 +126,18 @@ rpart.fit <- train(recovery_bin ~ . ,
                    metric = "ROC")
 ggplot(rpart.fit, highlight = TRUE)
 
+rpart.fit$bestTune
+
 ```
+
+The optimal value of cp is 0.00843378, which is the value of the complexity parameter that results in the best performance of the model. Here, the cp controls the complexity of the tree, with smaller values of cp resulting in larger trees and larger values of cp resulting in smaller trees with fewer splits.
 
 ```{r}
 rpart.plot(rpart.fit$finalModel)
 
 ```
 
-From the plot, we see that the tree with size of 11 has the highest ROC.
+From the plot, we see that the tree with size of 7 has the highest ROC.
 
 ## cit
 ```{r}
@@ -140,7 +151,10 @@ ctree.fit <- train(recovery_bin ~ . ,
                    trControl = ctrl)
 ggplot(ctree.fit, highlight = TRUE)
 plot(ctree.fit$finalModel)
+
+ctree.fit$bestTune
 ```
+
 
 
 ## compare two trees
@@ -153,22 +167,32 @@ summary(resamples(list(rpart.fit, ctree.fit)))
 set.seed(1)
 bagging <- randomForest(recovery_bin ~ . ,
                         data_train,
-                        mtry = 8)
+                        mtry = 14)
+bagging
+```
+
+bagging - Here's we choose mtry to be 14, since there are 14 potential predictors in our model. 
+The OOB estimate of the error rate is 30.83%, which is an estimate of the classification error rate of the model when applied to new data. The confusion matrix shows the number of true negatives (284), false positives (589), false negatives (288), and true positives (1684) in the predictions made by the model on the OOB samples.
+The class.error is the classification error rate, which is the proportion of misclassified cases. The error rate for classifying "f" is 0.6746850 and for "s" it is 0.1460446.
+In summary, the model has a moderate OOB error rate of 30.83%, with more errors in classifying "f" than "s".
+
+```{r}
 set.seed(1)
 rf <- randomForest(recovery_bin ~ . ,
-                   data_train,
-                   mtry = 3)
+                   data_train)
 
 set.seed(1)
 rf2 <- ranger(recovery_bin ~ . ,
               data_train,
-              mtry = 3,
               probability = TRUE)
 
 rf.pred <- predict(rf, newdata = data_test, type = "prob")[,1]
 rf2.pred <- predict(rf2, data = data_test, type = "response")$predictions[,1]
 
 ```
+
+
+
 
 ## Boosting
 
@@ -183,7 +207,7 @@ bst <- gbm(recovery_bin ~ . ,
            n.trees = 2000,
            interaction.depth = 2,
            shrinkage = 0.005,
-           cv.folds = 10,
+           cv.folds = 5,
            n.cores = 2)
 gbm.perf(bst, method = "cv")
 
