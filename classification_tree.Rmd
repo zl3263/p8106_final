@@ -83,35 +83,6 @@ data_test = dat[!sample,]
 ```
 
 
-<!-- ## rpart -->
-
-<!-- ```{r} -->
-<!-- set.seed(1) -->
-<!-- tree1 <- rpart(formula = recovery_bin ~ . , -->
-<!--                data = dat, -->
-<!--                subset = sample, -->
-<!--                control = rpart.control(cp = 0)) -->
-<!-- cpTable <- printcp(tree1) -->
-
-<!-- plotcp(tree1) -->
-<!-- minErr <- which.min(cpTable[,4]) -->
-<!-- tree2 <- prune(tree1, cp = cpTable[minErr,1]) -->
-<!-- rpart.plot(tree2) -->
-<!-- ``` -->
-
-<!-- From the plot, we see that the tree with size of 7 has the lowest cross-validation error. The variables used for splits are study Group B, bmi<30, vaccine, severity, smoking and bmi>=23. -->
-
-<!-- ## ctree -->
-
-<!-- ```{r} -->
-<!-- tree2 <- ctree(formula = recovery_bin ~ . , -->
-<!--                data = dat, -->
-<!--                subset = sample) -->
-
-<!-- plot(tree2) -->
-<!-- ``` -->
-
-
 ## bagging
 ```{r}
 set.seed(1)
@@ -125,23 +96,6 @@ bagging - Here's we choose mtry to be 14, since there are 14 potential predictor
 The OOB estimate of the error rate is 30.83%, which is an estimate of the classification error rate of the model when applied to new data. The confusion matrix shows the number of true negatives (284), false positives (589), false negatives (288), and true positives (1684) in the predictions made by the model on the OOB samples.
 The class.error is the classification error rate, which is the proportion of misclassified cases. The error rate for classifying "f" is 0.6746850 and for "s" it is 0.1460446.
 In summary, the model has a moderate OOB error rate of 30.83%, with more errors in classifying "f" than "s".
-
-# ```{r}
-# set.seed(1)
-# rf <- randomForest(recovery_bin ~ . ,
-#                    data_train)
-# 
-# set.seed(1)
-# rf2 <- ranger(recovery_bin ~ . ,
-#               data_train,
-#               probability = TRUE)
-# 
-# rf.pred <- predict(rf, newdata = data_test, type = "prob")[,1]
-# rf2.pred <- predict(rf2, data = data_test, type = "response")$predictions[,1]
-# 
-# ```
-
-
 
 
 ## Boosting
