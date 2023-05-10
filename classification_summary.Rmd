@@ -1,7 +1,7 @@
 ---
-title: "p8106_final"
+title: "p8106_final_classification"
 author: "Zekai Jin, Zizhao Lin, Jiawen Zhao"
-date: "2023-4-30"
+date: "2023-5-8"
 output: html_document
 ---
 
@@ -25,6 +25,19 @@ library(caret)
 library(klaR)
 library(kernlab)
 library(factoextra)
+library(ISLR)
+library(mlbench)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(party)
+library(partykit)
+library(pROC)
+library(randomForest)
+library(ranger)
+library(gbm)
+library(doParallel)
+library(vip)
 
 # prepare the dataset
 load("data/recovery.RData")
@@ -64,16 +77,19 @@ data_train = dat[sample,]
 data_test = dat[!sample,]
 
 # for parameter tuning
-ctrl = trainControl(method = "cv", classProbs = TRUE)
+ctrl <- trainControl(method = "cv", 
+                     #summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
 
 ```
 
-## PCA
+<!--
+## PCA (不要了)
 
 According to PCA, the two classes are non-separable. 
 
-<!-- 分类结果都好烂，用pca看看好不好分 -->
-<!-- 寄-->
+ 分类结果都好烂，用pca看看好不好分 
+
 ```{r}
 pca = prcomp(data.matrix(data_train))
 
@@ -85,7 +101,7 @@ fviz_pca_ind(pca,
              addEllipses = TRUE)
 ```
 
-
+-->
 
 ## Classification
 
@@ -94,23 +110,15 @@ fviz_pca_ind(pca,
 General liner model is tested  with logit link for binary outcome. It has no tuning parameter available and the accuracy is 0.71 in cross validation.
 
 ```{r}
-
-#ctrl = trainControl(method = "cv", 
-#                     summaryFunction = twoClassSummary,
-#                     classProbs = TRUE)
-
 set.seed(1)
 glm_fit = train(recovery_bin ~ . , 
                 data_train,
                 method = "glm",
+                trControl=ctrl,
                 family = binomial(link = "logit"))
 
 
 summary(glm_fit)
-
-glm_pred_raw = predict(glm_fit, newdata = data_test, type = "raw")
-
-confusionMatrix(data = glm_pred_raw, reference = data_test$recovery_bin)
 ```
 
 ## LDA 
@@ -134,7 +142,6 @@ set.seed(1)
 lda_fit = train(x = data.matrix(data_train[1:14]),
                 y = data_train$recovery_bin,
                 method = "lda",
-                metric = "ROC",
                 trControl = ctrl)
 
 lda_pred_raw = predict(lda_fit, newdata = data.matrix(data_test), type = "raw")
@@ -149,7 +156,8 @@ Support Vector Machine separates data at hyper plane. Linear SVM presents little
 
 
 <!-- 跑不动， 全寄，看泽楷的图说话.jpg -->
-```{r message=FALSE}
+## linear kernel
+```{r cache=TRUE}
 # parallel computation
 cl <- makePSOCKcluster(8)
 registerDoParallel(cl)
@@ -167,7 +175,9 @@ stopCluster(cl)
 plot(svml_fit, highlight = TRUE, xTrans = log)
 ```
 
-```{r}
+## radial kernel
+
+```{r cache=TRUE}
 svmr.grid = expand.grid(C = exp(seq(-1,5,len=20)),
                         sigma = exp(seq(-10,-1,len=20)))
 
@@ -188,8 +198,152 @@ myCol= rainbow(25)
 
 myPar = list(superpose.symbol = list(col = myCol),superpose.line = list(col = myCol))
 
-plot(svmr.fit, highlight = TRUE, par.settings = myPar)
+plot(svmr.fit, highlight = TRUE, par.settings = myPar,xTrans=log)
 
 ```
+
+## quadratic kernel
+
+```{r cache=TRUE}
+svmq.grid = expand.grid(
+  degree=c(2),
+  C = exp(seq(-1,5,len=10)),
+  scale = c(1))
+
+# parallel computation
+cl <- makePSOCKcluster(8)
+registerDoParallel(cl)
+
+set.seed(1)
+svmq.fit = train(x = data.matrix(data_train[1:14]),
+                 y = data_train$recovery_bin,
+                 method = "svmPoly",
+                 tuneGrid = svmq.grid,
+                 trControl = ctrl)
+
+stopCluster(cl)
+
+plot(svmq.fit, highlight = TRUE, par.settings = myPar,xTrans=log)
+
+```
+
+
+## tree-based models
+
+## single tree
+
+```{r}
+env <- foreach:::.foreachGlobals
+rm(list=ls(name=env), pos=env)
+
+set.seed(1)
+
+rpart.fit <- train(recovery_bin ~ . ,
+                   data = data_train,
+                   method = "rpart",
+                   tuneGrid = data.frame(cp = exp(seq(-8,-3, len = 40))),
+                   trControl = ctrl)
+
+ggplot(rpart.fit, highlight = TRUE)
+
+```
+
+## adaboost
+```{r, cache=TRUE}
+tune_grid <- expand.grid(
+  n.trees = c(500,1000,2000,3000,4000,5000),
+  interaction.depth = 1:7,
+  shrinkage = c(0.005,0.001,0.01),
+  n.minobsinnode = c(1)
+)
+
+# parallel computation
+cl <- makePSOCKcluster(8)
+registerDoParallel(cl)
+
+set.seed(1)
+
+model_gbm = train(
+  recovery_bin~.,
+  data=data_train,
+  method = "gbm",
+  distribution = "adaboost",
+  trControl = ctrl,
+  tuneGrid=tune_grid,
+  verbose = FALSE
+)
+
+stopCluster(cl)
+
+ggplot(model_gbm,highlight=TRUE)
+```
+
+
+
+
+# comparing different models:
+```{r}
+env <- foreach:::.foreachGlobals
+rm(list=ls(name=env), pos=env)
+
+comparasion = resamples(list(
+  glm=glm_fit,
+  lda=lda_fit,
+  svm_linear=svml_fit,
+  svm_radial=svmr.fit,
+  svm_quadratic=svmq.fit,
+  tree= rpart.fit,
+  tree_boost = model_gbm
+  ))
+
+model_rank =
+  comparasion$values %>%
+  dplyr::select(ends_with("Accuracy")) %>%
+  pivot_longer('glm~Accuracy':'tree_boost~Accuracy',names_to = "model", values_to = "Accuracy",names_pattern = "(.*)~Accuracy") %>%
+  group_by(model) %>%
+  summarize(Accuracy_mean=mean(Accuracy),RMSE_sd = sd(Accuracy)) %>%
+  arrange(Accuracy_mean) 
+model_rank
+
+model_rank=pull(model_rank,model)
+
+comparasion$values %>%
+  dplyr::select(ends_with("Accuracy")) %>%
+  pivot_longer('glm~Accuracy':'tree_boost~Accuracy',names_to = "model", values_to = "Accuracy",names_pattern = "(.*)~Accuracy") %>%
+  mutate(model=factor(model,levels=model_rank)) %>%
+  ggplot() +
+  geom_density_ridges(aes(x=Accuracy,y=model,color=model,fill=model),alpha=0.5)
+```
+
+# final model evaluation
+```{r}
+# test error
+predicted = predict(model_gbm,newdata=data_test)
+mean(data_test$recovery_bin==predicted)
+
+
+# vip
+vip(
+  model_gbm,
+  method = "permute",
+  train = data_train,
+  target = "recovery_bin",
+  metric = "Accuracy",
+  nsim = 10,
+  pred_wrapper = predict,
+  geom = "boxplot",
+  all_permutations = TRUE,
+  mapping = aes_string(fill = "Variable")
+)
+
+```
+
+
+
+
+
+
+
+
 
 
